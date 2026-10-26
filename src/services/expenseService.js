@@ -14,6 +14,18 @@ const apiClient = axios.create({
   timeout: 15000,
 });
 
+// Attach JWT Bearer Token to outgoing requests
+apiClient.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('expense_tracker_jwt_token');
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 /**
  * Standardize error messages from server or network errors.
  */

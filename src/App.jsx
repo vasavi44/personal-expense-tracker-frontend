@@ -8,16 +8,25 @@ import EditModal from './components/EditModal';
 import DeleteConfirmModal from './components/DeleteConfirmModal';
 import Toast from './components/Toast';
 import Footer from './components/Footer';
+import LoginPage from './components/LoginPage';
+import RegisterPage from './components/RegisterPage';
+import { useAuth } from './context/AuthContext';
 import expenseService, { extractErrorMessage } from './services/expenseService';
+import { Loader2 } from 'lucide-react';
 
 export function App() {
-  // Master state: all saved expenses from database
+  const { user, isAuthenticated, isLoading: authLoading, login, register, logout } = useAuth();
+
+  // Switch between 'login' and 'register' for unauthenticated users
+  const [authView, setAuthView] = useState('login');
+
+  // Master state: all saved expenses belonging to the authenticated user
   const [allExpenses, setAllExpenses] = useState([]);
-  // Total summary state from backend API: totalAmount across ALL expenses
+  // Total summary state from backend API: totalAmount across this user's expenses
   const [totalSummary, setTotalSummary] = useState({ totalAmount: 0, count: 0 });
 
   // UI state
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -46,11 +55,14 @@ export function App() {
     setToast(null);
   }, []);
 
-  // Fetch all expenses and total from the backend
+  // Fetch expenses and total for authenticated user
   const fetchData = useCallback(async (isManualRefresh = false) => {
+    if (!isAuthenticated) return;
+
     if (isManualRefresh) setIsRefreshing(true);
+    else setIsLoading(true);
+
     try {
-      // Parallel fetch for expenses and total
       const [expensesData, totalData] = await Promise.all([
         expenseService.getExpenses(),
         expenseService.getTotalExpenses(),
@@ -64,10 +76,15 @@ export function App() {
       setBackendHealth('CONNECTED');
 
       if (isManualRefresh) {
-        showToast('success', 'Expenses synced successfully with server.');
+        showToast('success', 'Your expenses synced successfully with server.');
       }
     } catch (err) {
       console.error('Error fetching expenses:', err);
+      if (err.response && err.response.status === 401) {
+        showToast('error', 'Session expired. Please sign in again.');
+        logout();
+        return;
+      }
       setBackendHealth('OFFLINE');
       const msg = extractErrorMessage(err);
       showToast('error', `Failed to load expenses: ${msg}`);
@@ -75,12 +92,17 @@ export function App() {
       setIsLoading(false);
       if (isManualRefresh) setIsRefreshing(false);
     }
-  }, [showToast]);
+  }, [isAuthenticated, logout, showToast]);
 
-  // Initial load
+  // Load user data once authenticated
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (isAuthenticated) {
+      fetchData();
+    } else {
+      setAllExpenses([]);
+      setTotalSummary({ totalAmount: 0, count: 0 });
+    }
+  }, [isAuthenticated, fetchData]);
 
   // Handler: Add Expense
   const handleAddExpense = async (payload) => {
@@ -88,13 +110,17 @@ export function App() {
     try {
       const created = await expenseService.createExpense(payload);
       showToast('success', `Added "${created.title}" successfully.`);
-      // Refresh complete dataset and accurate server total
       await fetchData();
       return true;
     } catch (err) {
+      if (err.response && err.response.status === 401) {
+        showToast('error', 'Session expired. Please sign in again.');
+        logout();
+        return false;
+      }
       const msg = extractErrorMessage(err);
       showToast('error', `Failed to add expense: ${msg}`);
-      return false; // Do not clear form on error
+      return false;
     } finally {
       setIsSubmitting(false);
     }
@@ -122,9 +148,13 @@ export function App() {
       showToast('success', `Updated "${updated.title}" successfully.`);
       setIsEditModalOpen(false);
       setEditingExpense(null);
-      // Refresh complete dataset and accurate server total
       await fetchData();
     } catch (err) {
+      if (err.response && err.response.status === 401) {
+        showToast('error', 'Session expired. Please sign in again.');
+        logout();
+        return;
+      }
       const msg = extractErrorMessage(err);
       showToast('error', `Failed to update expense: ${msg}`);
     } finally {
@@ -154,14 +184,26 @@ export function App() {
       showToast('success', 'Expense deleted successfully.');
       setIsDeleteModalOpen(false);
       setDeletingExpense(null);
-      // Refresh complete dataset and accurate server total
       await fetchData();
     } catch (err) {
+      if (err.response && err.response.status === 401) {
+        showToast('error', 'Session expired. Please sign in again.');
+        logout();
+        return;
+      }
       const msg = extractErrorMessage(err);
       showToast('error', `Failed to delete expense: ${msg}`);
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  // Handler: Logout
+  const handleLogout = () => {
+    logout();
+    setAllExpenses([]);
+    setTotalSummary({ totalAmount: 0, count: 0 });
+    showToast('info', 'You have been signed out.');
   };
 
   // Handler: Reset Filters
@@ -172,19 +214,15 @@ export function App() {
   };
 
   // Filter and Sort displayed records
-  // Crucial Rule: The Total Expense card MUST use totalSummary.totalAmount (all saved records),
-  // while the table displays the filtered/searched records.
   const filteredAndSortedExpenses = useMemo(() => {
     let result = [...allExpenses];
 
-    // Filter by category
     if (selectedCategory !== 'ALL') {
       result = result.filter(
         (exp) => exp.category?.toLowerCase() === selectedCategory.toLowerCase()
       );
     }
 
-    // Filter by search query (title)
     if (searchTerm.trim() !== '') {
       const query = searchTerm.trim().toLowerCase();
       result = result.filter((exp) =>
@@ -192,7 +230,6 @@ export function App() {
       );
     }
 
-    // Sort order
     result.sort((a, b) => {
       switch (sortBy) {
         case 'date-asc':
@@ -212,6 +249,39 @@ export function App() {
     return result;
   }, [allExpenses, selectedCategory, searchTerm, sortBy]);
 
+  // Loading spinner during initial session verification
+  if (authLoading) {
+    return (
+      <div className="auth-loading-screen">
+        <Loader2 size={44} className="spin-icon primary-accent" />
+        <p className="auth-loading-text">Verifying session...</p>
+      </div>
+    );
+  }
+
+  // Unauthenticated: render Login or Register
+  if (!isAuthenticated) {
+    return (
+      <div className="app-layout">
+        <Toast toast={toast} onClose={closeToast} />
+        {authView === 'login' ? (
+          <LoginPage
+            onLogin={login}
+            onSwitchToRegister={() => setAuthView('register')}
+            showToast={showToast}
+          />
+        ) : (
+          <RegisterPage
+            onRegister={register}
+            onSwitchToLogin={() => setAuthView('login')}
+            showToast={showToast}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Authenticated: Render personal dashboard
   return (
     <div className="app-layout">
       {/* Toast Notification */}
@@ -219,11 +289,13 @@ export function App() {
 
       {/* Main Container */}
       <div className="app-container">
-        {/* Header */}
+        {/* Header with User Info and Logout */}
         <Header
           backendHealth={backendHealth}
           onRefresh={() => fetchData(true)}
           isRefreshing={isRefreshing}
+          currentUser={user}
+          onLogout={handleLogout}
         />
 
         {/* Financial Summary Cards */}

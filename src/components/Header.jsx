@@ -1,7 +1,13 @@
 import React from 'react';
-import { Wallet, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { Wallet, CheckCircle2, AlertCircle, RefreshCw, LogOut, User } from 'lucide-react';
 
-export const Header = ({ backendHealth, onRefresh, isRefreshing }) => {
+export const Header = ({
+  backendHealth,
+  onRefresh,
+  isRefreshing,
+  currentUser,
+  onLogout,
+}) => {
   return (
     <header className="app-header">
       <div className="header-brand">
@@ -14,7 +20,11 @@ export const Header = ({ backendHealth, onRefresh, isRefreshing }) => {
             <span className="badge-currency">INR (₹)</span>
           </div>
           <p className="welcome-message">
-            Welcome! Manage, track, and analyze your everyday expenses with real-time accuracy.
+            {currentUser ? (
+              <>Welcome back, <strong>{currentUser.name}</strong>! Your private expense journal.</>
+            ) : (
+              'Manage, track, and analyze your everyday expenses with real-time accuracy.'
+            )}
           </p>
         </div>
       </div>
@@ -65,6 +75,32 @@ export const Header = ({ backendHealth, onRefresh, isRefreshing }) => {
           <RefreshCw size={16} className={isRefreshing ? 'spin-icon' : ''} />
           <span className="btn-refresh-text">Sync</span>
         </button>
+
+        {currentUser && (
+          <div className="user-profile-header">
+            <div className="user-avatar-pill" title={`Logged in as ${currentUser.email}`}>
+              <div className="user-avatar-circle">
+                <User size={14} />
+              </div>
+              <div className="user-info-text">
+                <span className="user-name">{currentUser.name}</span>
+                <span className="user-email">{currentUser.email}</span>
+              </div>
+            </div>
+
+            <button
+              id="btn-logout"
+              type="button"
+              className="btn-logout"
+              onClick={onLogout}
+              title="Sign out of your account"
+              aria-label="Sign out"
+            >
+              <LogOut size={16} />
+              <span className="logout-text">Logout</span>
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
