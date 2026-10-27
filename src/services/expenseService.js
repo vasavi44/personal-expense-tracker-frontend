@@ -28,27 +28,55 @@ apiClient.interceptors.request.use(
 
 /**
  * Standardize error messages from server or network errors.
+ * Safely presents server validation and business logic messages (4xx)
+ * without exposing internal server errors or stack traces (5xx).
  */
 export const extractErrorMessage = (error) => {
+  if (!error) return 'An unexpected error occurred. Please try again.';
+
   if (error.response) {
-    const data = error.response.data;
+    const { status, data } = error.response;
+
+    // For server-side errors (5xx), do not expose internal server messages
+    if (status >= 500) {
+      return 'The server encountered an error. Please try again later.';
+    }
+
+    // For client / validation / business logic errors (4xx)
     if (data) {
-      if (data.validationErrors && Object.keys(data.validationErrors).length > 0) {
-        return Object.values(data.validationErrors).join(', ');
+      if (data.validationErrors && typeof data.validationErrors === 'object' && Object.keys(data.validationErrors).length > 0) {
+        return Object.values(data.validationErrors).filter(Boolean).join(', ');
       }
-      if (data.message) {
+      if (data.message && typeof data.message === 'string') {
         return data.message;
       }
-      if (data.error) {
+      if (data.error && typeof data.error === 'string') {
         return data.error;
       }
     }
-    return `Server error: ${error.response.status} ${error.response.statusText}`;
+
+    if (status === 401) {
+      return 'Invalid email or password. Please try again.';
+    }
+    if (status === 403) {
+      return 'You do not have permission to perform this action.';
+    }
+    if (status === 404) {
+      return 'The requested resource was not found.';
+    }
+
+    return `Request failed with status code ${status}.`;
   }
+
+  if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+    return 'Connection timed out. Please check your network and try again.';
+  }
+
   if (error.request) {
     return 'Unable to connect to the backend server. Please verify the Spring Boot service is running.';
   }
-  return error.message || 'An unexpected error occurred.';
+
+  return error.message || 'An unexpected error occurred. Please try again.';
 };
 
 export const expenseService = {

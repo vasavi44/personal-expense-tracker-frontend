@@ -111,4 +111,5 @@ export const authService = {
   },
 };
 
+export { extractErrorMessage } from './expenseService';
 export default authService;
